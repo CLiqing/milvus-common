@@ -19,7 +19,7 @@ IOReader::IOReader(std::shared_ptr<IOContextPool> io_pool) : io_pool_(std::move(
 }
 
 bool
-IOReader::Read(std::span<std::byte*> buf, size_t size, std::span<off_t> offsets) const {
+IOReader::Read(IOReaderSpan<std::byte*> buf, size_t size, IOReaderSpan<off_t> offsets) const {
     if (buf.size() != offsets.size()) {
         throw std::invalid_argument("buffers and offsets must have same size");
     }
@@ -123,40 +123,51 @@ IOReader::ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<
                                       return false;
                                   }
 
-                                  size_t submitted = 0;
-                                  for (size_t i = 0; i < buffers.size(); ++i) {
-                                      auto* sqe = io_uring_get_sqe(ring);
-                                      if (sqe == nullptr) {
-                                          break;
+                                  size_t processed = 0;
+                                  while (processed < buffers.size()) {
+                                      size_t batch = 0;
+                                      for (; processed + batch < buffers.size(); ++batch) {
+                                          auto* sqe = io_uring_get_sqe(ring);
+                                          if (sqe == nullptr) {
+                                              break;
+                                          }
+                                          const auto idx = processed + batch;
+                                          io_uring_prep_read(sqe, fd, reinterpret_cast<void*>(buffers[idx]), size, offsets[idx]);
+                                          sqe->user_data = idx;
                                       }
-                                      io_uring_prep_read(sqe, fd, reinterpret_cast<void*>(buffers[i]), size, offsets[i]);
-                                      sqe->user_data = i;
-                                      ++submitted;
-                                  }
 
-                                  if (submitted == 0 || io_uring_submit(ring) < 0) {
-                                      pool->PushUring(ring);
-                                      return false;
-                                  }
-
-                                  size_t completed = 0;
-                                  while (completed < submitted) {
-                                      io_uring_cqe* cqe = nullptr;
-                                      if (io_uring_wait_cqe(ring, &cqe) < 0 || cqe == nullptr) {
+                                      if (batch == 0) {
                                           pool->PushUring(ring);
                                           return false;
                                       }
-                                      if (cqe->res < 0 || static_cast<size_t>(cqe->res) != size) {
+
+                                      const auto submitted = io_uring_submit(ring);
+                                      if (submitted < 0 || static_cast<size_t>(submitted) != batch) {
+                                          pool->PushUring(ring);
+                                          return false;
+                                      }
+
+                                      size_t completed = 0;
+                                      while (completed < batch) {
+                                          io_uring_cqe* cqe = nullptr;
+                                          if (io_uring_wait_cqe(ring, &cqe) < 0 || cqe == nullptr) {
+                                              pool->PushUring(ring);
+                                              return false;
+                                          }
+                                          if (cqe->res < 0 || static_cast<size_t>(cqe->res) != size) {
+                                              io_uring_cqe_seen(ring, cqe);
+                                              pool->PushUring(ring);
+                                              return false;
+                                          }
                                           io_uring_cqe_seen(ring, cqe);
-                                          pool->PushUring(ring);
-                                          return false;
+                                          ++completed;
                                       }
-                                      io_uring_cqe_seen(ring, cqe);
-                                      ++completed;
+
+                                      processed += batch;
                                   }
 
                                   pool->PushUring(ring);
-                                  return submitted == buffers.size();
+                                  return true;
                               }
 #endif
                               default:

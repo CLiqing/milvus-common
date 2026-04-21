@@ -12,11 +12,11 @@ std::mutex g_io_pool_mutex;
 #ifdef WITH_IO_URING
 bool
 IOContextPool::TryInitUring(const IOContextPoolConfig& cfg, const std::shared_ptr<IOContextPool>& io_pool) {
-    if (!UringContextPool::InitGlobalUringPool(cfg.num_ctx, cfg.max_events)) {
+    if (!UringContextPool::InitGlobalUringPoolWithValidation(cfg.num_ctx, cfg.max_events)) {
         return false;
     }
 
-    auto pool = UringContextPool::GetGlobalUringPool();
+    auto pool = UringContextPool::GetGlobalUringPoolDirect();
     if (pool == nullptr) {
         return false;
     }
@@ -31,11 +31,11 @@ IOContextPool::TryInitUring(const IOContextPoolConfig& cfg, const std::shared_pt
 #ifdef MILVUS_COMMON_WITH_LIBAIO
 bool
 IOContextPool::TryInitAio(const IOContextPoolConfig& cfg, const std::shared_ptr<IOContextPool>& io_pool) {
-    if (!AioContextPool::InitGlobalAioPool(cfg.num_ctx, cfg.max_events)) {
+    if (!AioContextPool::InitGlobalAioPoolWithValidation(cfg.num_ctx, cfg.max_events)) {
         return false;
     }
 
-    auto pool = AioContextPool::GetGlobalAioPool();
+    auto pool = AioContextPool::GetGlobalAioPoolDirect();
     if (pool == nullptr) {
         return false;
     }
@@ -106,13 +106,19 @@ IOContextPool::InitGlobal(const IOContextPoolConfig& cfg) {
 
 std::shared_ptr<IOContextPool>
 IOContextPool::GetGlobal() {
-    std::scoped_lock lk(g_io_pool_mutex);
-    if (g_io_pool == nullptr) {
-        IOContextPoolConfig cfg;
-        if (!InitGlobal(cfg)) {
-            return nullptr;
+    {
+        std::scoped_lock lk(g_io_pool_mutex);
+        if (g_io_pool != nullptr) {
+            return g_io_pool;
         }
     }
+
+    IOContextPoolConfig cfg;
+    if (!InitGlobal(cfg)) {
+        return nullptr;
+    }
+
+    std::scoped_lock lk(g_io_pool_mutex);
     return g_io_pool;
 }
 

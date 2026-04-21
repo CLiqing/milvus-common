@@ -26,7 +26,7 @@ class UringContextPool {
     UringContextPool(UringContextPool&&) noexcept = delete;
 
     UringContextPool&
-    operator==(UringContextPool&&) noexcept = delete;
+    operator=(UringContextPool&&) noexcept = delete;
 
     size_t
     max_entries_per_ctx() {

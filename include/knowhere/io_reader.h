@@ -14,7 +14,7 @@
 #endif
 
 #if !defined(__cpp_lib_span)
-namespace std {
+namespace knowhere_compat {
 template <typename T>
 class span {
  public:
@@ -40,10 +40,18 @@ class span {
     T* data_;
     size_t size_;
 };
-}  // namespace std
+}  // namespace knowhere_compat
 #endif
 
 #include "knowhere/io_context_pool.h"
+
+#if defined(__cpp_lib_span)
+template <typename T>
+using IOReaderSpan = std::span<T>;
+#else
+template <typename T>
+using IOReaderSpan = knowhere_compat::span<T>;
+#endif
 
 class IOReader {
  public:
@@ -56,7 +64,7 @@ class IOReader {
     explicit IOReader(std::shared_ptr<IOContextPool> io_pool);
 
     bool
-    Read(std::span<std::byte*> buf, size_t size, std::span<off_t> offsets) const;
+    Read(IOReaderSpan<std::byte*> buf, size_t size, IOReaderSpan<off_t> offsets) const;
 
     std::future<bool>
     ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<size_t>&& offsets) const;
