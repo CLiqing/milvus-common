@@ -3,6 +3,7 @@
 #include <libaio.h>
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <queue>
 
@@ -58,6 +59,12 @@ class AioContextPool {
 
     static std::shared_ptr<AioContextPool>
     GetGlobalAioPool();
+
+    static bool
+    InitGlobalAioPoolWithValidation(size_t num_ctx, size_t max_events);
+
+    static std::shared_ptr<AioContextPool>
+    GetGlobalAioPoolDirect();
 
     ~AioContextPool() {
         stop_ = true;

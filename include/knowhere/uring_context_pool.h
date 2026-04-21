@@ -82,6 +82,12 @@ class UringContextPool {
     static std::shared_ptr<UringContextPool>
     GetGlobalUringPool();
 
+    static bool
+    InitGlobalUringPoolWithValidation(size_t num_ctx, size_t max_entries);
+
+    static std::shared_ptr<UringContextPool>
+    GetGlobalUringPoolDirect();
+
     ~UringContextPool();
 
  private:

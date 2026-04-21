@@ -137,6 +137,9 @@ add_library(milvus-common SHARED ${SRC_FILES})
 
 # Use std::shared_ptr etc. instead of opentelemetry::nostd:: equivalents
 target_compile_definitions(milvus-common PUBLIC OPENTELEMETRY_STL_VERSION=2017)
+if(LIBAIO_LIBRARY)
+    target_compile_definitions(milvus-common PUBLIC MILVUS_COMMON_WITH_LIBAIO)
+endif()
 if(MILVUS_COMMON_WITH_IO_URING)
     target_compile_definitions(milvus-common PUBLIC WITH_IO_URING)
 endif()

@@ -6,6 +6,8 @@
 #include <cstring>
 #include <thread>
 
+#include "knowhere/io_context_pool.h"
+
 size_t UringContextPool::global_uring_pool_size = 0;
 size_t UringContextPool::global_uring_max_entries = 0;
 std::mutex UringContextPool::global_uring_pool_mut;
@@ -35,7 +37,7 @@ UringContextPool::UringContextPool(size_t num_ctx, size_t max_entries) : num_ctx
 }
 
 bool
-UringContextPool::InitGlobalUringPool(size_t num_ctx, size_t max_entries) {
+UringContextPool::InitGlobalUringPoolWithValidation(size_t num_ctx, size_t max_entries) {
     if (num_ctx == 0) {
         LOG_ERROR("num_ctx should be bigger than 0");
         return false;
@@ -67,7 +69,7 @@ UringContextPool::InitGlobalUringPool(size_t num_ctx, size_t max_entries) {
 }
 
 std::shared_ptr<UringContextPool>
-UringContextPool::GetGlobalUringPool() {
+UringContextPool::GetGlobalUringPoolDirect() {
     std::scoped_lock lk(global_uring_pool_mut);
     if (global_uring_pool_size == 0) {
         global_uring_pool_size = 1;
@@ -78,6 +80,28 @@ UringContextPool::GetGlobalUringPool() {
     static std::shared_ptr<UringContextPool> pool =
         std::shared_ptr<UringContextPool>(new UringContextPool(global_uring_pool_size, global_uring_max_entries));
     return pool;
+}
+
+bool
+UringContextPool::InitGlobalUringPool(size_t num_ctx, size_t max_entries) {
+    IOContextPoolConfig cfg;
+    cfg.prefer_io_uring = true;
+    cfg.num_ctx = num_ctx;
+    cfg.max_events = max_entries;
+    return IOContextPool::InitGlobal(cfg);
+}
+
+std::shared_ptr<UringContextPool>
+UringContextPool::GetGlobalUringPool() {
+    auto io_pool = IOContextPool::GetGlobal();
+    if (io_pool == nullptr) {
+        return nullptr;
+    }
+    auto legacy_pool = io_pool->GetUringPoolForLegacy();
+    if (legacy_pool != nullptr) {
+        return legacy_pool;
+    }
+    return GetGlobalUringPoolDirect();
 }
 
 UringContextPool::~UringContextPool() {
