@@ -17,7 +17,8 @@ IOContextPool::TryInitUring(const IOContextPoolConfig& cfg, const std::shared_pt
     }
 
     auto pool = UringContextPool::GetGlobalUringPoolDirect();
-    if (pool == nullptr) {
+    if (pool == nullptr || !pool->IsUsable()) {
+        LOG_ERROR("Global UringContextPool is unavailable after initialization");
         return false;
     }
 
@@ -85,8 +86,14 @@ IOContextPool::InitGlobal(const IOContextPoolConfig& cfg) {
         LOG_INFO("Global IOContextPool initialized with backend io_uring");
         return true;
     }
-    LOG_ERROR("Failed to initialize io_uring backend while WITH_IO_URING is enabled");
-    return false;
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+    LOG_WARN("io_uring backend initialization failed, fallback to aio backend");
+    if (TryInitAio(cfg, io_pool)) {
+        g_io_pool = io_pool;
+        LOG_WARN("Global IOContextPool fallback initialized with backend aio");
+        return true;
+    }
+#endif
 #elif defined(MILVUS_COMMON_WITH_LIBAIO)
     if (TryInitAio(cfg, io_pool)) {
         g_io_pool = io_pool;

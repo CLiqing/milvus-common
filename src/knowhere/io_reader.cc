@@ -67,7 +67,7 @@ IOReader::ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<
         throw std::runtime_error("IOContextPool is not initialized");
     }
 
-    return std::async(std::launch::async,
+    return std::async(std::launch::deferred,
                       [fd = fd_,
                        size,
                        buffers = std::move(buffers),

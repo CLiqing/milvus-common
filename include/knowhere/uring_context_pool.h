@@ -33,6 +33,11 @@ class UringContextPool {
         return max_entries_;
     }
 
+    bool
+    IsUsable() const {
+        return !ring_bak_.empty();
+    }
+
     void
     push(struct io_uring* ring) {
         if (ring == nullptr) {
