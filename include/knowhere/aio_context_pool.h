@@ -2,6 +2,7 @@
 
 #include <libaio.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -82,8 +83,8 @@ class AioContextPool {
     bool stop_ = false;
     size_t num_ctx_;
     size_t max_events_;
-    static size_t global_aio_pool_size;
-    static size_t global_aio_max_events;
+    static std::atomic<size_t> global_aio_pool_size;
+    static std::atomic<size_t> global_aio_max_events;
     static std::mutex global_aio_pool_mut;
 
     AioContextPool(size_t num_ctx, size_t max_events) : num_ctx_(num_ctx), max_events_(max_events) {

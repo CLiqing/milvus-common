@@ -81,38 +81,86 @@ IOReader::ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<
                                       return false;
                                   }
 
-                                  std::vector<struct iocb> cbs(buffers.size());
-                                  std::vector<struct iocb*> cb_ptrs(buffers.size());
-                                  std::vector<struct io_event> events(buffers.size());
-
-                                  for (size_t i = 0; i < buffers.size(); ++i) {
-                                      io_prep_pread(&cbs[i], fd, reinterpret_cast<void*>(buffers[i]), size, offsets[i]);
-                                      cb_ptrs[i] = &cbs[i];
-                                  }
-
-                                  const auto submitted = io_submit(ctx, static_cast<long>(cb_ptrs.size()), cb_ptrs.data());
-                                  if (submitted != static_cast<long>(cb_ptrs.size())) {
+                                  const size_t max_batch = pool->MaxEventsPerCtx();
+                                  if (max_batch == 0) {
                                       pool->PushAio(ctx);
                                       return false;
                                   }
 
-                                  const auto completed = io_getevents(ctx,
-                                                                      static_cast<long>(events.size()),
-                                                                      static_cast<long>(events.size()),
-                                                                      events.data(),
-                                                                      nullptr);
+                                  size_t pending = 0;
+                                  auto drain_pending = [&]() {
+                                      while (pending > 0) {
+                                          std::vector<struct io_event> drain_events(std::min(pending, max_batch));
+                                          const auto drained = io_getevents(ctx,
+                                                                            1,
+                                                                            static_cast<long>(drain_events.size()),
+                                                                            drain_events.data(),
+                                                                            nullptr);
+                                          if (drained <= 0) {
+                                              break;
+                                          }
+                                          pending -= static_cast<size_t>(drained);
+                                      }
+                                  };
 
-                                  pool->PushAio(ctx);
-                                  if (completed != static_cast<long>(events.size())) {
+                                  bool ok = true;
+                                  size_t processed = 0;
+                                  while (ok && processed < buffers.size()) {
+                                      const size_t batch = std::min(max_batch, buffers.size() - processed);
+                                      std::vector<struct iocb> cbs(batch);
+                                      std::vector<struct iocb*> cb_ptrs(batch);
+                                      for (size_t i = 0; i < batch; ++i) {
+                                          const auto idx = processed + i;
+                                          io_prep_pread(&cbs[i], fd, reinterpret_cast<void*>(buffers[idx]), size, offsets[idx]);
+                                          cb_ptrs[i] = &cbs[i];
+                                      }
+
+                                      size_t submitted_total = 0;
+                                      while (submitted_total < batch) {
+                                          const auto submitted =
+                                              io_submit(ctx,
+                                                        static_cast<long>(batch - submitted_total),
+                                                        cb_ptrs.data() + submitted_total);
+                                          if (submitted <= 0) {
+                                              ok = false;
+                                              break;
+                                          }
+                                          submitted_total += static_cast<size_t>(submitted);
+                                          pending += static_cast<size_t>(submitted);
+                                      }
+
+                                      std::vector<struct io_event> events(batch);
+                                      size_t completed_total = 0;
+                                      while (ok && completed_total < submitted_total) {
+                                          const auto completed = io_getevents(ctx,
+                                                                              1,
+                                                                              static_cast<long>(submitted_total - completed_total),
+                                                                              events.data() + completed_total,
+                                                                              nullptr);
+                                          if (completed <= 0) {
+                                              ok = false;
+                                              break;
+                                          }
+                                          completed_total += static_cast<size_t>(completed);
+                                          pending -= static_cast<size_t>(completed);
+                                      }
+
+                                      for (size_t i = 0; ok && i < completed_total; ++i) {
+                                          if (events[i].res < 0 || static_cast<size_t>(events[i].res) != size) {
+                                              ok = false;
+                                          }
+                                      }
+
+                                      processed += batch;
+                                  }
+
+                                  if (!ok) {
+                                      drain_pending();
+                                      pool->PushAio(ctx);
                                       return false;
                                   }
 
-                                  for (const auto& event : events) {
-                                      if (event.res < 0 || static_cast<size_t>(event.res) != size) {
-                                          return false;
-                                      }
-                                  }
-
+                                  pool->PushAio(ctx);
                                   return true;
                               }
 #endif

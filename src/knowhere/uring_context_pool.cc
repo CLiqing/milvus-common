@@ -84,24 +84,30 @@ UringContextPool::GetGlobalUringPoolDirect() {
 
 bool
 UringContextPool::InitGlobalUringPool(size_t num_ctx, size_t max_entries) {
-    IOContextPoolConfig cfg;
-    cfg.prefer_io_uring = true;
-    cfg.num_ctx = num_ctx;
-    cfg.max_events = max_entries;
-    return IOContextPool::InitGlobal(cfg);
+    if (!InitGlobalUringPoolWithValidation(num_ctx, max_entries)) {
+        return false;
+    }
+    auto io_pool = IOContextPool::GetGlobal();
+    if (io_pool == nullptr || !io_pool->IsInitialized()) {
+        return false;
+    }
+    if (io_pool->Backend() != IOBackend::IO_URING) {
+        LOG_ERROR("Global IOContextPool backend is %s, legacy io_uring API is unavailable", io_pool->BackendName().c_str());
+        return false;
+    }
+    return true;
 }
 
 std::shared_ptr<UringContextPool>
 UringContextPool::GetGlobalUringPool() {
     auto io_pool = IOContextPool::GetGlobal();
-    if (io_pool == nullptr) {
+    if (io_pool == nullptr || !io_pool->IsInitialized()) {
         return nullptr;
     }
-    auto legacy_pool = io_pool->GetUringPoolForLegacy();
-    if (legacy_pool != nullptr) {
-        return legacy_pool;
+    if (io_pool->Backend() != IOBackend::IO_URING) {
+        return nullptr;
     }
-    return GetGlobalUringPoolDirect();
+    return io_pool->GetUringPoolForLegacy();
 }
 
 UringContextPool::~UringContextPool() {

@@ -43,7 +43,7 @@ class UringContextPool {
         {
             std::scoped_lock lk(ring_mtx_);
             if (stop_) {
-                LOG_WARN("UringContextPool is stopping, reject returned ring: %p", static_cast<void*>(ring));
+                checked_out_rings_.erase(ring);
                 return;
             }
 

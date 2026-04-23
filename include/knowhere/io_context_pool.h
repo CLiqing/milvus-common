@@ -27,9 +27,12 @@ enum class IOBackend {
 };
 
 struct IOContextPoolConfig {
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+    size_t num_ctx = default_pool_size;
+#else
     size_t num_ctx = 1;
+#endif
     size_t max_events = 128;
-    bool prefer_io_uring = true;
 };
 
 class IOContextPool {
@@ -92,6 +95,7 @@ class IOContextPool {
 #endif
 
     IOBackend backend_ = IOBackend::UNKNOWN;
+    size_t num_ctx_ = 0;
     size_t max_events_per_ctx_ = 0;
 
 #ifdef WITH_IO_URING

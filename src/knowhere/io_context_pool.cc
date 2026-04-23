@@ -23,6 +23,7 @@ IOContextPool::TryInitUring(const IOContextPoolConfig& cfg, const std::shared_pt
 
     io_pool->uring_pool_ = pool;
     io_pool->backend_ = IOBackend::IO_URING;
+    io_pool->num_ctx_ = cfg.num_ctx;
     io_pool->max_events_per_ctx_ = pool->max_entries_per_ctx();
     return true;
 }
@@ -42,6 +43,7 @@ IOContextPool::TryInitAio(const IOContextPoolConfig& cfg, const std::shared_ptr<
 
     io_pool->aio_pool_ = pool;
     io_pool->backend_ = IOBackend::AIO;
+    io_pool->num_ctx_ = cfg.num_ctx;
     io_pool->max_events_per_ctx_ = pool->max_events_per_ctx();
     return true;
 }
@@ -61,44 +63,37 @@ IOContextPool::InitGlobal(const IOContextPoolConfig& cfg) {
 
     std::scoped_lock lk(g_io_pool_mutex);
     if (g_io_pool != nullptr && g_io_pool->IsInitialized()) {
+        if (cfg.max_events != g_io_pool->MaxEventsPerCtx()) {
+            LOG_ERROR("Global IOContextPool already initialized with max_events=%zu, requested=%zu",
+                      g_io_pool->MaxEventsPerCtx(),
+                      cfg.max_events);
+            return false;
+        }
+        if (cfg.num_ctx != g_io_pool->num_ctx_) {
+            LOG_ERROR("Global IOContextPool already initialized with num_ctx=%zu, requested=%zu", g_io_pool->num_ctx_, cfg.num_ctx);
+            return false;
+        }
         LOG_WARN("Global IOContextPool has already been initialized with backend: %s", g_io_pool->BackendName().c_str());
         return true;
     }
 
     auto io_pool = std::shared_ptr<IOContextPool>(new IOContextPool());
 
-    if (cfg.prefer_io_uring) {
 #ifdef WITH_IO_URING
-        if (TryInitUring(cfg, io_pool)) {
-            g_io_pool = io_pool;
-            LOG_INFO("Global IOContextPool initialized with backend io_uring");
-            return true;
-        }
-        LOG_WARN("io_uring initialization failed, fallback to aio if available");
-#endif
-#ifdef MILVUS_COMMON_WITH_LIBAIO
-        if (TryInitAio(cfg, io_pool)) {
-            g_io_pool = io_pool;
-            LOG_INFO("Global IOContextPool initialized with backend aio");
-            return true;
-        }
-#endif
-    } else {
-#ifdef MILVUS_COMMON_WITH_LIBAIO
-        if (TryInitAio(cfg, io_pool)) {
-            g_io_pool = io_pool;
-            LOG_INFO("Global IOContextPool initialized with backend aio");
-            return true;
-        }
-#endif
-#ifdef WITH_IO_URING
-        if (TryInitUring(cfg, io_pool)) {
-            g_io_pool = io_pool;
-            LOG_INFO("Global IOContextPool initialized with backend io_uring");
-            return true;
-        }
-#endif
+    if (TryInitUring(cfg, io_pool)) {
+        g_io_pool = io_pool;
+        LOG_INFO("Global IOContextPool initialized with backend io_uring");
+        return true;
     }
+    LOG_ERROR("Failed to initialize io_uring backend while WITH_IO_URING is enabled");
+    return false;
+#elif defined(MILVUS_COMMON_WITH_LIBAIO)
+    if (TryInitAio(cfg, io_pool)) {
+        g_io_pool = io_pool;
+        LOG_INFO("Global IOContextPool initialized with backend aio");
+        return true;
+    }
+#endif
 
     LOG_ERROR("Failed to initialize IOContextPool with any backend");
     return false;

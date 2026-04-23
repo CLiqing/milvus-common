@@ -13,7 +13,6 @@
 
 TEST(IOContextPoolTest, BackendIsSelectedAtInit) {
     IOContextPoolConfig cfg;
-    cfg.prefer_io_uring = true;
     cfg.num_ctx = 2;
     cfg.max_events = 128;
 
@@ -22,37 +21,66 @@ TEST(IOContextPoolTest, BackendIsSelectedAtInit) {
     auto pool = IOContextPool::GetGlobal();
     ASSERT_NE(pool, nullptr);
 
-    auto b1 = pool->BackendName();
-    auto b2 = pool->BackendName();
-    ASSERT_EQ(b1, b2);
-    ASSERT_TRUE(b1 == "io_uring" || b1 == "aio");
+    auto backend = pool->Backend();
+#ifdef WITH_IO_URING
+    ASSERT_EQ(backend, IOBackend::IO_URING);
+#else
+    ASSERT_EQ(backend, IOBackend::AIO);
+#endif
 }
 
 TEST(IOContextPoolTest, InvalidConfigRejected) {
     IOContextPoolConfig cfg;
-    cfg.prefer_io_uring = true;
     cfg.num_ctx = 0;
     cfg.max_events = 128;
 
     ASSERT_FALSE(IOContextPool::InitGlobal(cfg));
 }
 
+TEST(IOContextPoolTest, ReinitWithDifferentConfigShouldFail) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = 2;
+    cfg.max_events = 128;
+    ASSERT_TRUE(IOContextPool::InitGlobal(cfg));
+
+    IOContextPoolConfig mismatch = cfg;
+    mismatch.num_ctx = 4;
+
+    ASSERT_FALSE(IOContextPool::InitGlobal(mismatch));
+}
+
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+TEST(IOContextPoolTest, DefaultConfigShouldMatchLegacyAioPoolSize) {
+    IOContextPoolConfig cfg;
+    ASSERT_EQ(cfg.num_ctx, default_pool_size);
+    ASSERT_EQ(cfg.max_events, default_max_events);
+}
+#endif
+
 TEST(IOContextPoolTest, ReaderCanBeConstructed) {
     IOContextPoolConfig cfg;
-    cfg.prefer_io_uring = true;
-    cfg.num_ctx = 1;
+    cfg.num_ctx = 2;
     cfg.max_events = 128;
     ASSERT_TRUE(IOContextPool::InitGlobal(cfg));
 
     IOReader reader;
-    ASSERT_TRUE(reader.BackendName() == "io_uring" || reader.BackendName() == "aio");
+#ifdef WITH_IO_URING
+    ASSERT_EQ(reader.Backend(), IOBackend::IO_URING);
+#else
+    ASSERT_EQ(reader.Backend(), IOBackend::AIO);
+#endif
 }
 
 #ifdef MILVUS_COMMON_WITH_LIBAIO
 TEST(IOContextPoolTest, LegacyAioInitStillWorksViaUnifiedPath) {
+#ifdef WITH_IO_URING
+    ASSERT_FALSE(AioContextPool::InitGlobalAioPool(2, 128));
+    ASSERT_EQ(AioContextPool::GetGlobalAioPool(), nullptr);
+#else
     ASSERT_TRUE(AioContextPool::InitGlobalAioPool(2, 128));
     auto p = AioContextPool::GetGlobalAioPool();
     ASSERT_NE(p, nullptr);
+#endif
 }
 #endif
 
