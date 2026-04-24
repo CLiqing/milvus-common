@@ -60,15 +60,15 @@ UringContextPool::InitGlobalUringPoolWithValidation(size_t num_ctx, size_t max_e
     }
 
     if (global_uring_pool_size != num_ctx || global_uring_max_entries != max_entries) {
-        LOG_WARN("Global UringContextPool already initialized with context num: %zu, max_entries: %zu (requested %zu, %zu)",
-                 global_uring_pool_size,
-                 global_uring_max_entries,
-                 num_ctx,
-                 max_entries);
-    } else {
-        LOG_WARN("Global UringContextPool has already been initialized with context num: %zu", global_uring_pool_size);
+        LOG_ERROR("Global UringContextPool already initialized with context num: %zu, max_entries: %zu (requested %zu, %zu)",
+                  global_uring_pool_size,
+                  global_uring_max_entries,
+                  num_ctx,
+                  max_entries);
+        return false;
     }
 
+    LOG_WARN("Global UringContextPool has already been initialized with context num: %zu", global_uring_pool_size);
     return true;
 }
 

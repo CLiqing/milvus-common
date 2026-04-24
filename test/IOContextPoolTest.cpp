@@ -4,10 +4,12 @@
 #include <thread>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/resource.h>
 #include <unistd.h>
 
 #include <future>
+#include <type_traits>
 #include <vector>
 #include <sys/wait.h>
 
@@ -143,6 +145,13 @@ TEST_F(IOContextPoolTestFixture, ReaderCanBeConstructed) {
 #endif
 }
 
+TEST_F(IOContextPoolTestFixture, IoReaderSpanShouldUseCompatSpanType) {
+    EXPECT_TRUE((std::is_same_v<IOReaderSpan<int>, knowhere_compat::span<int>>));
+#if defined(__cpp_lib_span)
+    EXPECT_FALSE((std::is_same_v<IOReaderSpan<int>, std::span<int>>));
+#endif
+}
+
 #ifdef MILVUS_COMMON_WITH_LIBAIO
 TEST_F(IOContextPoolTestFixture, LegacyAioInitStillWorksViaUnifiedPath) {
 #ifdef WITH_IO_URING
@@ -154,13 +163,51 @@ TEST_F(IOContextPoolTestFixture, LegacyAioInitStillWorksViaUnifiedPath) {
     ASSERT_NE(p, nullptr);
 #endif
 }
+
+TEST_F(IOContextPoolTestFixture, LegacyAioValidationReinitMismatchShouldFail) {
+    ASSERT_TRUE(AioContextPool::InitGlobalAioPoolWithValidation(2, 128));
+    ASSERT_FALSE(AioContextPool::InitGlobalAioPoolWithValidation(4, 128));
+}
+
+TEST_F(IOContextPoolTestFixture, LegacyAioPopShouldReturnNullAfterShutdown) {
+    ASSERT_TRUE(AioContextPool::InitGlobalAioPoolWithValidation(1, 128));
+    auto pool = AioContextPool::GetGlobalAioPoolDirect();
+    ASSERT_NE(pool, nullptr);
+
+    auto first = pool->pop();
+    ASSERT_NE(first, nullptr);
+
+    auto blocked = std::async(std::launch::async, [&]() { return pool->pop(); });
+    ASSERT_EQ(blocked.wait_for(std::chrono::milliseconds(50)), std::future_status::timeout);
+
+    pool->Shutdown();
+
+    ASSERT_EQ(blocked.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(blocked.get(), nullptr);
+}
 #endif
 
 #ifdef WITH_IO_URING
 TEST_F(IOContextPoolTestFixture, LegacyUringInitStillWorksViaUnifiedPath) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = 1;
+    cfg.max_events = 128;
+    ASSERT_TRUE(IOContextPool::InitGlobal(cfg));
+
+    auto io_pool = IOContextPool::GetGlobal();
+    ASSERT_NE(io_pool, nullptr);
+    if (io_pool->Backend() != IOBackend::IO_URING) {
+        GTEST_SKIP() << "io_uring backend unavailable";
+    }
+
     ASSERT_TRUE(UringContextPool::InitGlobalUringPool(1, 128));
     auto p = UringContextPool::GetGlobalUringPool();
     ASSERT_NE(p, nullptr);
+}
+
+TEST_F(IOContextPoolTestFixture, LegacyUringValidationReinitMismatchShouldFail) {
+    ASSERT_TRUE(UringContextPool::InitGlobalUringPoolWithValidation(1, 64));
+    ASSERT_FALSE(UringContextPool::InitGlobalUringPoolWithValidation(2, 64));
 }
 
 TEST_F(IOContextPoolTestFixture, ReadAsyncShouldBeDeferredFuture) {

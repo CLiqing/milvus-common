@@ -35,6 +35,9 @@ class AioContextPool {
     push(io_context_t ctx) {
         {
             std::scoped_lock lk(ctx_mtx_);
+            if (stop_) {
+                return;
+            }
             ctx_q_.push(ctx);
         }
         ctx_cv_.notify_one();
@@ -43,16 +46,25 @@ class AioContextPool {
     io_context_t
     pop() {
         std::unique_lock lk(ctx_mtx_);
-        if (stop_) {
-            return nullptr;
-        }
-        ctx_cv_.wait(lk, [this] { return ctx_q_.size(); });
+        ctx_cv_.wait(lk, [this] { return stop_ || !ctx_q_.empty(); });
         if (stop_) {
             return nullptr;
         }
         auto ret = ctx_q_.front();
         ctx_q_.pop();
         return ret;
+    }
+
+    void
+    Shutdown() {
+        {
+            std::scoped_lock lk(ctx_mtx_);
+            if (stop_) {
+                return;
+            }
+            stop_ = true;
+        }
+        ctx_cv_.notify_all();
     }
 
     static bool
@@ -71,11 +83,10 @@ class AioContextPool {
     ResetGlobalForTest();
 
     ~AioContextPool() {
-        stop_ = true;
+        Shutdown();
         for (auto ctx : ctx_bak_) {
             io_destroy(ctx);
         }
-        ctx_cv_.notify_all();
     }
 
  private:

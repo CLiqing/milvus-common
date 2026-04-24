@@ -29,7 +29,15 @@ AioContextPool::InitGlobalAioPoolWithValidation(size_t num_ctx, size_t max_event
             return true;
         }
     }
-    LOG_WARN("Global AioContextPool has already been inialized with context num: %zu", global_aio_pool_size.load());
+    if (global_aio_pool_size != num_ctx || global_aio_max_events != max_events) {
+        LOG_ERROR("Global AioContextPool already initialized with context num: %zu, max_events: %zu (requested %zu, %zu)",
+                  global_aio_pool_size.load(),
+                  global_aio_max_events.load(),
+                  num_ctx,
+                  max_events);
+        return false;
+    }
+    LOG_WARN("Global AioContextPool has already been initialized with context num: %zu", global_aio_pool_size.load());
     return true;
 }
 

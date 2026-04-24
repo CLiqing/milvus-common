@@ -7,13 +7,6 @@
 #include <sys/types.h>
 #include <vector>
 
-#if defined(__has_include)
-#if __has_include(<span>)
-#include <span>
-#endif
-#endif
-
-#if !defined(__cpp_lib_span)
 namespace knowhere_compat {
 template <typename T>
 class span {
@@ -41,17 +34,11 @@ class span {
     size_t size_;
 };
 }  // namespace knowhere_compat
-#endif
 
 #include "knowhere/io_context_pool.h"
 
-#if defined(__cpp_lib_span)
-template <typename T>
-using IOReaderSpan = std::span<T>;
-#else
 template <typename T>
 using IOReaderSpan = knowhere_compat::span<T>;
-#endif
 
 class IOReader {
  public:
