@@ -8,6 +8,10 @@
 
 #include "knowhere/io_context_pool.h"
 
+namespace {
+std::shared_ptr<UringContextPool> g_uring_pool;
+}
+
 size_t UringContextPool::global_uring_pool_size = 0;
 size_t UringContextPool::global_uring_max_entries = 0;
 std::mutex UringContextPool::global_uring_pool_mut;
@@ -77,9 +81,10 @@ UringContextPool::GetGlobalUringPoolDirect() {
         LOG_WARN("Global UringContextPool has not been initialized yet, init it now with context num: %zu", global_uring_pool_size);
     }
 
-    static std::shared_ptr<UringContextPool> pool =
-        std::shared_ptr<UringContextPool>(new UringContextPool(global_uring_pool_size, global_uring_max_entries));
-    return pool;
+    if (g_uring_pool == nullptr) {
+        g_uring_pool = std::shared_ptr<UringContextPool>(new UringContextPool(global_uring_pool_size, global_uring_max_entries));
+    }
+    return g_uring_pool;
 }
 
 bool
@@ -108,6 +113,14 @@ UringContextPool::GetGlobalUringPool() {
         return nullptr;
     }
     return io_pool->GetUringPoolForLegacy();
+}
+
+void
+UringContextPool::ResetGlobalForTest() {
+    std::scoped_lock lk(global_uring_pool_mut);
+    g_uring_pool.reset();
+    global_uring_pool_size = 0;
+    global_uring_max_entries = 0;
 }
 
 UringContextPool::~UringContextPool() {

@@ -20,9 +20,22 @@
 #include "knowhere/uring_context_pool.h"
 #endif
 
+class IOContextPoolTestFixture : public ::testing::Test {
+ protected:
+    void
+    SetUp() override {
+        IOContextPool::ResetGlobalForTest();
+    }
+
+    void
+    TearDown() override {
+        IOContextPool::ResetGlobalForTest();
+    }
+};
+
 #ifdef WITH_IO_URING
 #ifdef MILVUS_COMMON_WITH_LIBAIO
-TEST(IOContextPoolTest, InitShouldFallbackToAioWhenUringUnavailable) {
+TEST_F(IOContextPoolTestFixture, InitShouldFallbackToAioWhenUringUnavailable) {
     pid_t pid = fork();
     ASSERT_GE(pid, 0);
     if (pid == 0) {
@@ -56,7 +69,7 @@ TEST(IOContextPoolTest, InitShouldFallbackToAioWhenUringUnavailable) {
 #endif
 #endif
 
-TEST(IOContextPoolTest, BackendIsSelectedAtInit) {
+TEST_F(IOContextPoolTestFixture, BackendIsSelectedAtInit) {
     IOContextPoolConfig cfg;
     cfg.num_ctx = 2;
     cfg.max_events = 128;
@@ -74,7 +87,7 @@ TEST(IOContextPoolTest, BackendIsSelectedAtInit) {
 #endif
 }
 
-TEST(IOContextPoolTest, InvalidConfigRejected) {
+TEST_F(IOContextPoolTestFixture, InvalidConfigRejected) {
     IOContextPoolConfig cfg;
     cfg.num_ctx = 0;
     cfg.max_events = 128;
@@ -82,7 +95,7 @@ TEST(IOContextPoolTest, InvalidConfigRejected) {
     ASSERT_FALSE(IOContextPool::InitGlobal(cfg));
 }
 
-TEST(IOContextPoolTest, ReinitWithDifferentConfigShouldFail) {
+TEST_F(IOContextPoolTestFixture, ReinitWithDifferentConfigShouldFail) {
     IOContextPoolConfig cfg;
     cfg.num_ctx = 2;
     cfg.max_events = 128;
@@ -94,15 +107,29 @@ TEST(IOContextPoolTest, ReinitWithDifferentConfigShouldFail) {
     ASSERT_FALSE(IOContextPool::InitGlobal(mismatch));
 }
 
+TEST_F(IOContextPoolTestFixture, ResetGlobalForTestShouldClearSingletonState) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = 2;
+    cfg.max_events = 128;
+    ASSERT_TRUE(IOContextPool::InitGlobal(cfg));
+
+    IOContextPoolConfig mismatch = cfg;
+    mismatch.num_ctx = 4;
+
+    ASSERT_FALSE(IOContextPool::InitGlobal(mismatch));
+    IOContextPool::ResetGlobalForTest();
+    ASSERT_TRUE(IOContextPool::InitGlobal(mismatch));
+}
+
 #ifdef MILVUS_COMMON_WITH_LIBAIO
-TEST(IOContextPoolTest, DefaultConfigShouldMatchLegacyAioPoolSize) {
+TEST_F(IOContextPoolTestFixture, DefaultConfigShouldMatchLegacyAioPoolSize) {
     IOContextPoolConfig cfg;
     ASSERT_EQ(cfg.num_ctx, default_pool_size);
     ASSERT_EQ(cfg.max_events, default_max_events);
 }
 #endif
 
-TEST(IOContextPoolTest, ReaderCanBeConstructed) {
+TEST_F(IOContextPoolTestFixture, ReaderCanBeConstructed) {
     IOContextPoolConfig cfg;
     cfg.num_ctx = 2;
     cfg.max_events = 128;
@@ -117,7 +144,7 @@ TEST(IOContextPoolTest, ReaderCanBeConstructed) {
 }
 
 #ifdef MILVUS_COMMON_WITH_LIBAIO
-TEST(IOContextPoolTest, LegacyAioInitStillWorksViaUnifiedPath) {
+TEST_F(IOContextPoolTestFixture, LegacyAioInitStillWorksViaUnifiedPath) {
 #ifdef WITH_IO_URING
     ASSERT_FALSE(AioContextPool::InitGlobalAioPool(2, 128));
     ASSERT_EQ(AioContextPool::GetGlobalAioPool(), nullptr);
@@ -130,13 +157,13 @@ TEST(IOContextPoolTest, LegacyAioInitStillWorksViaUnifiedPath) {
 #endif
 
 #ifdef WITH_IO_URING
-TEST(IOContextPoolTest, LegacyUringInitStillWorksViaUnifiedPath) {
+TEST_F(IOContextPoolTestFixture, LegacyUringInitStillWorksViaUnifiedPath) {
     ASSERT_TRUE(UringContextPool::InitGlobalUringPool(1, 128));
     auto p = UringContextPool::GetGlobalUringPool();
     ASSERT_NE(p, nullptr);
 }
 
-TEST(IOContextPoolTest, ReadAsyncShouldBeDeferredFuture) {
+TEST_F(IOContextPoolTestFixture, ReadAsyncShouldBeDeferredFuture) {
     const char path[] = "/tmp/io_reader_async_mode_test.bin";
     int fd = ::open(path, O_CREAT | O_TRUNC | O_RDWR, 0644);
     ASSERT_GE(fd, 0);

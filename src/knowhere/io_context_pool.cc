@@ -124,6 +124,18 @@ IOContextPool::GetGlobal() {
     return g_io_pool;
 }
 
+void
+IOContextPool::ResetGlobalForTest() {
+    std::scoped_lock lk(g_io_pool_mutex);
+    g_io_pool.reset();
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+    AioContextPool::ResetGlobalForTest();
+#endif
+#ifdef WITH_IO_URING
+    UringContextPool::ResetGlobalForTest();
+#endif
+}
+
 IOBackend
 IOContextPool::Backend() const {
     return backend_;

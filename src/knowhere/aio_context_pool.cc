@@ -3,6 +3,10 @@
 #include "knowhere/io_context_pool.h"
 #include "log/Log.h"
 
+namespace {
+std::shared_ptr<AioContextPool> g_aio_pool;
+}
+
 std::atomic<size_t> AioContextPool::global_aio_pool_size{0};
 std::atomic<size_t> AioContextPool::global_aio_max_events{0};
 std::mutex AioContextPool::global_aio_pool_mut;
@@ -25,23 +29,23 @@ AioContextPool::InitGlobalAioPoolWithValidation(size_t num_ctx, size_t max_event
             return true;
         }
     }
-    LOG_WARN("Global AioContextPool has already been inialized with context num: %d", global_aio_pool_size);
+    LOG_WARN("Global AioContextPool has already been inialized with context num: %zu", global_aio_pool_size.load());
     return true;
 }
 
 std::shared_ptr<AioContextPool>
 AioContextPool::GetGlobalAioPoolDirect() {
+    std::scoped_lock lk(global_aio_pool_mut);
     if (global_aio_pool_size == 0) {
-        std::scoped_lock lk(global_aio_pool_mut);
-        if (global_aio_pool_size == 0) {
-            global_aio_pool_size = default_pool_size;
-            global_aio_max_events = default_max_events;
-            LOG_WARN("Global AioContextPool has not been inialized yet, init it now with context num: %d",
-                     global_aio_pool_size);
-        }
+        global_aio_pool_size = default_pool_size;
+        global_aio_max_events = default_max_events;
+        LOG_WARN("Global AioContextPool has not been inialized yet, init it now with context num: %zu",
+                 global_aio_pool_size.load());
     }
-    static auto pool = std::shared_ptr<AioContextPool>(new AioContextPool(global_aio_pool_size, global_aio_max_events));
-    return pool;
+    if (g_aio_pool == nullptr) {
+        g_aio_pool = std::shared_ptr<AioContextPool>(new AioContextPool(global_aio_pool_size, global_aio_max_events));
+    }
+    return g_aio_pool;
 }
 
 bool
@@ -70,4 +74,12 @@ AioContextPool::GetGlobalAioPool() {
         return nullptr;
     }
     return io_pool->GetAioPoolForLegacy();
+}
+
+void
+AioContextPool::ResetGlobalForTest() {
+    std::scoped_lock lk(global_aio_pool_mut);
+    g_aio_pool.reset();
+    global_aio_pool_size = 0;
+    global_aio_max_events = 0;
 }

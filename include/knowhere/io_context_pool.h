@@ -47,6 +47,9 @@ class IOContextPool {
     static std::shared_ptr<IOContextPool>
     GetGlobal();
 
+    static void
+    ResetGlobalForTest();
+
     IOBackend
     Backend() const;
 

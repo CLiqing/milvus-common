@@ -93,6 +93,9 @@ class UringContextPool {
     static std::shared_ptr<UringContextPool>
     GetGlobalUringPoolDirect();
 
+    static void
+    ResetGlobalForTest();
+
     ~UringContextPool();
 
  private:

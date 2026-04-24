@@ -67,6 +67,9 @@ class AioContextPool {
     static std::shared_ptr<AioContextPool>
     GetGlobalAioPoolDirect();
 
+    static void
+    ResetGlobalForTest();
+
     ~AioContextPool() {
         stop_ = true;
         for (auto ctx : ctx_bak_) {
