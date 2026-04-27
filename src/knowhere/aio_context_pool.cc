@@ -58,9 +58,14 @@ AioContextPool::GetGlobalAioPoolDirect() {
 
 bool
 AioContextPool::InitGlobalAioPool(size_t num_ctx, size_t max_events) {
-    if (!InitGlobalAioPoolWithValidation(num_ctx, max_events)) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = num_ctx;
+    cfg.max_events = max_events;
+
+    if (!IOContextPool::InitGlobal(cfg)) {
         return false;
     }
+
     auto io_pool = IOContextPool::GetGlobal();
     if (io_pool == nullptr || !io_pool->IsInitialized()) {
         return false;

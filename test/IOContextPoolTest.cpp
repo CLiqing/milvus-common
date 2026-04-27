@@ -164,9 +164,13 @@ TEST_F(IOContextPoolTestFixture, LegacyAioInitStillWorksViaUnifiedPath) {
     ASSERT_FALSE(AioContextPool::InitGlobalAioPool(2, 128));
     ASSERT_EQ(AioContextPool::GetGlobalAioPool(), nullptr);
 #else
-    ASSERT_TRUE(AioContextPool::InitGlobalAioPool(2, 128));
+    ASSERT_TRUE(AioContextPool::InitGlobalAioPool(2, 64));
     auto p = AioContextPool::GetGlobalAioPool();
     ASSERT_NE(p, nullptr);
+    auto io_pool = IOContextPool::GetGlobal();
+    ASSERT_NE(io_pool, nullptr);
+    ASSERT_EQ(io_pool->Backend(), IOBackend::AIO);
+    ASSERT_EQ(io_pool->MaxEventsPerCtx(), 64u);
 #endif
 }
 
