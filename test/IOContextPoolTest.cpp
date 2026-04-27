@@ -216,6 +216,15 @@ TEST_F(IOContextPoolTestFixture, LegacyUringValidationReinitMismatchShouldFail) 
     ASSERT_FALSE(UringContextPool::InitGlobalUringPoolWithValidation(2, 64));
 }
 
+TEST_F(IOContextPoolTestFixture, LegacyUringInitShouldHonorRequestedConfig) {
+    ASSERT_TRUE(UringContextPool::InitGlobalUringPool(1, 64));
+
+    auto io_pool = IOContextPool::GetGlobal();
+    ASSERT_NE(io_pool, nullptr);
+    ASSERT_EQ(io_pool->Backend(), IOBackend::IO_URING);
+    ASSERT_EQ(io_pool->MaxEventsPerCtx(), 64u);
+}
+
 TEST_F(IOContextPoolTestFixture, ReadAsyncShouldBeDeferredFuture) {
     const char path[] = "/tmp/io_reader_async_mode_test.bin";
     int fd = ::open(path, O_CREAT | O_TRUNC | O_RDWR, 0644);

@@ -89,9 +89,14 @@ UringContextPool::GetGlobalUringPoolDirect() {
 
 bool
 UringContextPool::InitGlobalUringPool(size_t num_ctx, size_t max_entries) {
-    if (!InitGlobalUringPoolWithValidation(num_ctx, max_entries)) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = num_ctx;
+    cfg.max_events = max_entries;
+
+    if (!IOContextPool::InitGlobal(cfg)) {
         return false;
     }
+
     auto io_pool = IOContextPool::GetGlobal();
     if (io_pool == nullptr || !io_pool->IsInitialized()) {
         return false;
