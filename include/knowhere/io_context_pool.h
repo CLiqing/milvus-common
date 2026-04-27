@@ -26,11 +26,13 @@ enum class IOBackend {
     AIO,
 };
 
+constexpr size_t default_io_ctx_pool_size = 65536 / 128;
+
 struct IOContextPoolConfig {
 #ifdef MILVUS_COMMON_WITH_LIBAIO
     size_t num_ctx = default_pool_size;
 #else
-    size_t num_ctx = 1;
+    size_t num_ctx = default_io_ctx_pool_size;
 #endif
     size_t max_events = 128;
 };

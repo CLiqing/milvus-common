@@ -129,6 +129,12 @@ TEST_F(IOContextPoolTestFixture, DefaultConfigShouldMatchLegacyAioPoolSize) {
     ASSERT_EQ(cfg.num_ctx, default_pool_size);
     ASSERT_EQ(cfg.max_events, default_max_events);
 }
+#else
+TEST_F(IOContextPoolTestFixture, DefaultConfigShouldNotUseSingleContext) {
+    IOContextPoolConfig cfg;
+    ASSERT_GT(cfg.num_ctx, 1u);
+    ASSERT_EQ(cfg.max_events, 128u);
+}
 #endif
 
 TEST_F(IOContextPoolTestFixture, ReaderCanBeConstructed) {
