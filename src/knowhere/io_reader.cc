@@ -76,14 +76,15 @@ IOReader::ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<
                           switch (pool->Backend()) {
 #ifdef MILVUS_COMMON_WITH_LIBAIO
                               case IOBackend::AIO: {
-                                  auto ctx = pool->PopAio();
+                                  auto handle = pool->Pop();
+                                  auto ctx = handle.aio;
                                   if (ctx == nullptr) {
                                       return false;
                                   }
 
                                   const size_t max_batch = pool->MaxEventsPerCtx();
                                   if (max_batch == 0) {
-                                      pool->PushAio(ctx);
+                                      pool->Push(handle);
                                       return false;
                                   }
 
@@ -156,21 +157,23 @@ IOReader::ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<
 
                                   if (!ok) {
                                       drain_pending();
-                                      pool->PushAio(ctx);
+                                      pool->Push(handle);
                                       return false;
                                   }
 
-                                  pool->PushAio(ctx);
+                                  pool->Push(handle);
                                   return true;
                               }
 #endif
 #ifdef WITH_IO_URING
                               case IOBackend::IO_URING: {
-                                  auto* ring = pool->PopUring();
+                                  auto handle = pool->Pop();
+                                  auto* ring = handle.uring;
                                   if (ring == nullptr) {
                                       return false;
                                   }
 
+                                  bool ok = true;
                                   size_t processed = 0;
                                   while (processed < buffers.size()) {
                                       size_t batch = 0;
@@ -185,37 +188,41 @@ IOReader::ReadAsync(std::vector<std::byte*>&& buffers, size_t size, std::vector<
                                       }
 
                                       if (batch == 0) {
-                                          pool->PushUring(ring);
-                                          return false;
+                                          ok = false;
+                                          break;
                                       }
 
                                       const auto submitted = io_uring_submit(ring);
                                       if (submitted < 0 || static_cast<size_t>(submitted) != batch) {
-                                          pool->PushUring(ring);
-                                          return false;
+                                          ok = false;
+                                          break;
                                       }
 
                                       size_t completed = 0;
                                       while (completed < batch) {
                                           io_uring_cqe* cqe = nullptr;
                                           if (io_uring_wait_cqe(ring, &cqe) < 0 || cqe == nullptr) {
-                                              pool->PushUring(ring);
-                                              return false;
+                                              ok = false;
+                                              break;
                                           }
                                           if (cqe->res < 0 || static_cast<size_t>(cqe->res) != size) {
                                               io_uring_cqe_seen(ring, cqe);
-                                              pool->PushUring(ring);
-                                              return false;
+                                              ok = false;
+                                              break;
                                           }
                                           io_uring_cqe_seen(ring, cqe);
                                           ++completed;
                                       }
 
+                                      if (!ok) {
+                                          break;
+                                      }
+
                                       processed += batch;
                                   }
 
-                                  pool->PushUring(ring);
-                                  return true;
+                                  pool->Push(handle);
+                                  return ok;
                               }
 #endif
                               default:

@@ -163,6 +163,52 @@ IOContextPool::MaxEventsPerCtx() const {
     return max_events_per_ctx_;
 }
 
+IOContextHandle
+IOContextPool::Pop() {
+    IOContextHandle handle;
+    handle.backend = backend_;
+    switch (backend_) {
+#ifdef WITH_IO_URING
+        case IOBackend::IO_URING:
+            handle.uring = PopUring();
+            break;
+#endif
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+        case IOBackend::AIO:
+            handle.aio = PopAio();
+            break;
+#endif
+        default:
+            break;
+    }
+    return handle;
+}
+
+void
+IOContextPool::Push(IOContextHandle handle) {
+    if (handle.backend != backend_) {
+        LOG_WARN("IOContextPool rejects handle for backend %d while active backend is %d",
+                 static_cast<int>(handle.backend),
+                 static_cast<int>(backend_));
+        return;
+    }
+
+    switch (handle.backend) {
+#ifdef WITH_IO_URING
+        case IOBackend::IO_URING:
+            PushUring(handle.uring);
+            break;
+#endif
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+        case IOBackend::AIO:
+            PushAio(handle.aio);
+            break;
+#endif
+        default:
+            break;
+    }
+}
+
 #ifdef WITH_IO_URING
 struct io_uring*
 IOContextPool::PopUring() {

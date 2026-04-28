@@ -151,6 +151,54 @@ TEST_F(IOContextPoolTestFixture, ReaderCanBeConstructed) {
 #endif
 }
 
+TEST_F(IOContextPoolTestFixture, UnifiedPopPushShouldUseSelectedBackend) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = 1;
+    cfg.max_events = 128;
+    ASSERT_TRUE(IOContextPool::InitGlobal(cfg));
+
+    auto pool = IOContextPool::GetGlobal();
+    ASSERT_NE(pool, nullptr);
+
+    auto handle = pool->Pop();
+    ASSERT_EQ(handle.backend, pool->Backend());
+#ifdef WITH_IO_URING
+    ASSERT_EQ(handle.backend, IOBackend::IO_URING);
+    ASSERT_NE(handle.uring, nullptr);
+#endif
+#if !defined(WITH_IO_URING) && defined(MILVUS_COMMON_WITH_LIBAIO)
+    ASSERT_EQ(handle.backend, IOBackend::AIO);
+    ASSERT_NE(handle.aio, nullptr);
+#endif
+    pool->Push(handle);
+
+    auto second = pool->Pop();
+    ASSERT_EQ(second.backend, pool->Backend());
+    pool->Push(second);
+}
+
+TEST_F(IOContextPoolTestFixture, PushShouldRejectHandleFromDifferentBackend) {
+    IOContextPoolConfig cfg;
+    cfg.num_ctx = 1;
+    cfg.max_events = 128;
+    ASSERT_TRUE(IOContextPool::InitGlobal(cfg));
+
+    auto pool = IOContextPool::GetGlobal();
+    ASSERT_NE(pool, nullptr);
+
+    auto handle = pool->Pop();
+    ASSERT_EQ(handle.backend, pool->Backend());
+
+    IOContextHandle mismatched = handle;
+    mismatched.backend = handle.backend == IOBackend::AIO ? IOBackend::IO_URING : IOBackend::AIO;
+    pool->Push(mismatched);
+    pool->Push(handle);
+
+    auto second = pool->Pop();
+    ASSERT_EQ(second.backend, pool->Backend());
+    pool->Push(second);
+}
+
 TEST_F(IOContextPoolTestFixture, IoReaderSpanShouldUseCompatSpanType) {
     EXPECT_TRUE((std::is_same_v<IOReaderSpan<int>, knowhere_compat::span<int>>));
 #if defined(__cpp_lib_span)

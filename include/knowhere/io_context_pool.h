@@ -37,6 +37,16 @@ struct IOContextPoolConfig {
     size_t max_events = 128;
 };
 
+struct IOContextHandle {
+    IOBackend backend = IOBackend::UNKNOWN;
+#ifdef WITH_IO_URING
+    struct io_uring* uring = nullptr;
+#endif
+#ifdef MILVUS_COMMON_WITH_LIBAIO
+    io_context_t aio = nullptr;
+#endif
+};
+
 class IOContextPool {
  public:
     IOContextPool(const IOContextPool&) = delete;
@@ -63,6 +73,12 @@ class IOContextPool {
 
     size_t
     MaxEventsPerCtx() const;
+
+    IOContextHandle
+    Pop();
+
+    void
+    Push(IOContextHandle handle);
 
 #ifdef WITH_IO_URING
     struct io_uring*
